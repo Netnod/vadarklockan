@@ -1,0 +1,3 @@
+From https://tweetnacl.cr.yp.to/:
+
+"TweetNaCl is a self-contained public-domain C library"

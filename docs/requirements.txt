@@ -1,0 +1,8 @@
+Flask
+breathe
+ipython
+jinja2
+myst_parser
+nbconvert
+nbsphinx
+sphinx
