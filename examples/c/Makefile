@@ -5,7 +5,7 @@ CFLAGS := -Wall -g -O2 -I$(SRCDIR)
 
 all: vak_client
 
-vak_client: vak_client.c $(SRCDIR)/overlap_algo.c $(SRCDIR)/vrt.c $(SRCDIR)/tweetnacl.c
+vak_client: vak_client.c $(SRCDIR)/vak_main.c $(SRCDIR)/overlap_algo.c $(SRCDIR)/vrt.c $(SRCDIR)/tweetnacl.c
 	$(CC) $(CFLAGS) -o $@ $+
 
 test: vak_client
