@@ -1,17 +1,13 @@
+/*
+ *  This sketch sends random data over UDP on a ESP32 device
+ *
+ */
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <SPI.h>
 #include <time.h>
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netdb.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/socket.h>
-#include <sys/fcntl.h>
-#include <sys/select.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <unistd.h>
+
+#include "login.h"
 
 #include "vrt.h"
 #include "overlap_algo.h"
@@ -112,6 +108,23 @@ static struct rt_server server_list[] = {
 #endif
 };
 
+static void print_time(uint64_t t64)
+{
+    struct tm *tm;
+    unsigned hh, mm, ss;
+
+    time_t t = t64 / 1000000;
+    unsigned frac = t64 % 1000000;
+
+    tm = gmtime(&t);
+
+    hh = tm->tm_hour;
+    mm = tm->tm_min;
+    ss = tm->tm_sec;
+
+    printf("%02u:%02u:%02u.%06u\n", hh, mm, ss, frac);
+}
+
 /** Get the wall time.
  *
  * This functions uses the same representation of time as the vrt
@@ -128,6 +141,31 @@ static uint64_t get_time(void)
         (uint64_t)(tv.tv_sec) * 1000000 +
         (uint64_t)(tv.tv_usec);
     return t;
+}
+
+static void adjust_time(double adj)
+{
+    uint64_t t64;
+    struct timeval tv;
+
+    t64 = get_time();
+    t64 += adj * 1000000;
+
+    tv.tv_sec = t64 / 1000000;
+    tv.tv_usec = t64 % 1000000;
+
+    if (settimeofday(&tv, NULL) < 0) {
+        // TODO
+    }
+
+    print_time(t64);
+}
+
+// TODO this is not random
+int getentropy(void *ptr, size_t size)
+{
+    memset(ptr, 0x42, size);
+    return 0;
 }
 
 /* Query a roughtime server to find out how to adjust our local clock
@@ -170,11 +208,8 @@ static int query_server(struct rt_server *server, overlap_value_t *lo, overlap_v
     uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
     uint8_t query_buf[VRT_QUERY_PACKET_LEN] = {0};
     uint32_t query_buf_len;
-    struct sockaddr_in servaddr;
-    struct sockaddr_in respaddr;
-    int sockfd;
+    WiFiUDP udp;
     uint64_t st, rt;
-    struct hostent *he;
     uint8_t nonce[VRT_NONCE_SIZE];
     uint64_t out_midpoint;
     uint32_t out_radii;
@@ -196,79 +231,25 @@ static int query_server(struct rt_server *server, overlap_value_t *lo, overlap_v
     printf("%s:%u: variant %u size %u ", server->host, server->port, server->variant, (unsigned)query_buf_len);
     fflush(stdout);
 
-    /* Look up the host name or process the IPv4 address and fill in
-     * the servaddr structure. */
-    he = gethostbyname(server->host);
-    if (!he) {
-        fprintf(stderr, "gethostbyname failed: %s\n", strerror(errno));
-        return 0;
-    }
-
-    memset((char *)&servaddr, 0, sizeof(servaddr));
-    memcpy(&servaddr.sin_addr.s_addr, he->h_addr_list[0], sizeof(struct in_addr));
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(server->port);
-
     /* Create an UDP socket */
-    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
-        fprintf(stderr, "socket failed: %s\n", strerror(errno));
-        return 0;
-    }
+    udp.begin(WiFi.localIP(), server->port);
+    udp.beginPacket(server->host, server->port);
 
     /* Get the wall time just before the request was sent out. */
     st = get_time();
 
-    /* Send the request */
-    int n = sendto(sockfd, (const char *)query_buf, query_buf_len, 0,
-                   (const struct sockaddr *)&servaddr, sizeof(servaddr));
-    if (n != query_buf_len) {
-        fprintf(stderr, "sendto failed: %s\n", strerror(errno));
-        close(sockfd);
-        return 0;
-    }
-
-    fcntl(sockfd, F_SETFL, O_NONBLOCK);
+    udp.write(query_buf, query_buf_len);
+    udp.endPacket();
 
     /* Keep waiting until we get a valid response or we time out */
     while (1) {
-        fd_set readfds;
-        int n;
-        struct timeval tv;
-
-        FD_ZERO(&readfds);
-        FD_SET(sockfd, &readfds);
-
-        /* Use a tenth of the query timeout for the select call. */
-        tv.tv_sec = 0;
-        tv.tv_usec = QUERY_TIMEOUT_USECS / 10;
-
-        n = select(sockfd + 1, &readfds, NULL, NULL, &tv);
-        if (n == -1) {
-            if (errno == EINTR)
-                continue;
-            fprintf(stderr, "select failed: %s\n", strerror(errno));
-            close(sockfd);
-            return 0;
-        }
+        int r = udp.parsePacket();
 
         /* Get the time as soon after the packet was received. */
         rt = get_time();
 
-        /* Get the packet from the kernel. */
-        if (FD_ISSET(sockfd, &readfds)) {
-            socklen_t respaddrsize = sizeof(respaddr);
-            n = recvfrom(sockfd, recv_buffer,
-                         (sizeof recv_buffer) * sizeof recv_buffer[0],
-                         0 /* flags */,
-                         (struct sockaddr *)&respaddr, &respaddrsize);
-            if (n < 0) {
-                if (errno == EAGAIN)
-                    continue;
-                fprintf(stderr, "recv failed: %s\n", strerror(errno));
-                close(sockfd);
-                return 0;
-            }
+        if (r) {
+            unsigned n = udp.read((char*)recv_buffer, sizeof(recv_buffer));
 
             /* TODO We might want to verify that servaddr and respaddr
              * match before parsing the response.  This way we could
@@ -291,12 +272,9 @@ static int query_server(struct rt_server *server, overlap_value_t *lo, overlap_v
 
         if (rt - st > QUERY_TIMEOUT_USECS) {
             printf("timeout\n");
-            close(sockfd);
             return 0;
         }
     }
-
-    close(sockfd);
 
     /* Translate roughtime response to lo..hi adjustment range.  */
     uint64_t local_time = (st + rt) / 2;
@@ -312,13 +290,54 @@ static int query_server(struct rt_server *server, overlap_value_t *lo, overlap_v
     return 1;
 }
 
-int main(int argc, char *argv[]) {
+// WiFi network name and password:
+static const char * networkName = username;
+static const char * networkPswd = password;
+
+//Are we currently connected?
+static boolean connected = false;
+
+static void connectToWiFi(const char *ssid, const char *pwd){
+  Serial.println("Connecting to WiFi network: " + String(ssid));
+
+  // delete old config
+  WiFi.disconnect(true);
+  //register event handler
+  WiFi.onEvent(WiFiEvent);
+
+  //Initiate connection
+  WiFi.begin(ssid, pwd);
+
+  Serial.println("Waiting for WIFI connection...");
+}
+
+//wifi event handler
+void WiFiEvent(WiFiEvent_t event){
+    switch(event) {
+      case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+          //When connected set
+          Serial.print("WiFi connected! IP address: ");
+          Serial.println(WiFi.localIP());
+          //initializes the UDP state
+          //This initializes the transfer buffer
+
+          connected = true;
+          break;
+      case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+          Serial.println("WiFi lost connection");
+          connected = false;
+          break;
+      default: break;
+    }
+}
+
+int run_vak(overlap_value_t *lo, overlap_value_t *hi)
+{
     struct rt_server *randomized_servers[sizeof(server_list) / sizeof(server_list[0])];
     struct overlap_algo *algo;
     int success = 0;
     int nr_responses = 0;
     int nr_overlaps;
-    overlap_value_t lo, hi;
     int i;
     unsigned seed;
 
@@ -329,7 +348,7 @@ int main(int argc, char *argv[]) {
      * used to randomize the list of servers. */
     if (getentropy(&seed, sizeof(seed)) < 0) {
         fprintf(stderr, "getentropy(%u) failed: %s\n", (unsigned)sizeof(seed), strerror(errno));
-        exit(1);
+        return 0;
     }
     srandom(seed);
 
@@ -350,22 +369,24 @@ int main(int argc, char *argv[]) {
     algo = overlap_new();
     if (!algo) {
         fprintf(stderr, "overlap_new failed\n");
-        exit(1);
+        return 0;
     }
 
     /* Query the randomized list of servers until we have a majority
      * of responses which all overlap, the number of overlaps is
      * enough and the uncertainty is low enough */
     for (i = 0; i < sizeof(randomized_servers) / sizeof(randomized_servers[0]); i++) {
-        if (!query_server(randomized_servers[i], &lo, &hi))
+        if (!query_server(randomized_servers[i], lo, hi))
             continue;
 
         nr_responses++;
 
-        overlap_add(algo, lo, hi);
-        nr_overlaps = overlap_find(algo, &lo, &hi);
+        overlap_add(algo, *lo, *hi);
+        nr_overlaps = overlap_find(algo, lo, hi);
 
-        if (nr_overlaps > nr_responses / 2 && nr_overlaps >= WANTED_OVERLAPS && (hi - lo) <= WANTED_UNCERTAINTY) {
+        if (nr_overlaps > nr_responses / 2 &&
+            nr_overlaps >= WANTED_OVERLAPS &&
+            (*hi - *lo) <= WANTED_UNCERTAINTY) {
             success = 1;
             break;
         }
@@ -377,32 +398,35 @@ int main(int argc, char *argv[]) {
     /* Exit with an error if we didn't succeed */
     if (!success) {
         printf("failure: unable to get %d overlapping responses\n", WANTED_OVERLAPS);
-        exit(1);
+        return 0;
     }
 
-    printf("success: %d/%d overlapping responses, range %.6f .. %.6f\n", nr_overlaps, nr_responses, lo, hi);
+    printf("success: %d/%d overlapping responses, range %.6f .. %.6f\n",
+           nr_overlaps, nr_responses, *lo, *hi);
 
-    /* If this code is enabled, adjust the local clock. */
-    if (0) {
-        struct timeval tv;
-        uint64_t t;
-        double adj;
-
-        t = get_time();
-
-        /* Use the middle of the adjustment range */
-        adj = (lo + hi) / 2;
-
-        t += adj * 1E6;
-
-        tv.tv_sec = t / 1000000;
-        tv.tv_usec = t % 1000000;
-
-        int r = settimeofday(&tv, NULL);
-        printf("settimeofday %lu.%lu returned %d: %s\n",
-               (unsigned long)tv.tv_sec, (unsigned long)tv.tv_usec,
-               r, strerror(errno));
-    }
-
-    exit(0);
+    return 1;
 }
+
+void setup(){
+    overlap_value_t lo, hi;
+
+    // Initilize hardware serial:
+    Serial.begin(115200);
+
+    //Connect to the WiFi network
+    connectToWiFi(networkName, networkPswd);
+
+    while (!connected) {
+        printf("waiting for WiFi...\n");
+    }
+
+    if (run_vak(&lo, &hi)) {
+        double adj = (lo + hi) / 2;
+        adjust_time(adj);
+    }
+}
+
+void loop() {
+    print_time(get_time());
+}
+
