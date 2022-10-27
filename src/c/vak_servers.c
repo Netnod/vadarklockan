@@ -1,3 +1,5 @@
+#include <stdlib.h>
+
 #include "vak.h"
 
 /* List of roughtime servers from
@@ -71,3 +73,57 @@ static struct vak_server server_list[] = {
     { "194.58.207.199", 2002, 5, { 0x4f,0xfc,0x71,0x5f,0x81,0x11,0x50,0x10,0x0e,0xa6,0xde,0xb8,0x67,0xca,0x61,0x59,0xa9,0x8a,0xb0,0x04,0x99,0xc4,0x9d,0x15,0x5a,0xe8,0x8f,0x9b,0x71,0x92,0xff,0xc8 } }, /* sth2.roughtime.netnod.se */
 #endif
 };
+
+struct vak_server **vak_get_servers(void)
+{
+    struct vak_server **l;
+    unsigned n, i;
+
+    n = sizeof(server_list) / sizeof(server_list[0]);
+    l = malloc((n + 1) * sizeof(*l));
+
+    if (l == NULL)
+        return NULL;
+
+    for (i = 0; i < n; i++)
+        l[i] = &server_list[i];
+    l[i] = NULL;
+
+    return l;
+};
+
+struct vak_server **vak_get_randomized_servers(void)
+{
+    struct vak_server **l;
+    unsigned i;
+
+    l = vak_get_servers();
+    if (l == NULL)
+        return NULL;
+
+    /* find end of list */
+    for (i = 0; l[i]; i++)
+        ;
+
+    /* iterate backwards and randomly swap position with an element
+     * below it.  Leave the element alone if it was going to swap with
+     * itself. */
+    for (; i > 0; i--) {
+        struct vak_server *t;
+
+        int j = random() % i;
+
+        if (i != j) {
+            t = l[i-1];
+            l[i-i] = l[j];
+            l[j] = t;
+        }
+    }
+
+    return l;
+}
+
+void vak_del_servers(struct vak_server **servers)
+{
+    free(servers);
+}

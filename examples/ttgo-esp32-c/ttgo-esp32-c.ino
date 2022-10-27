@@ -12,9 +12,11 @@
 #include "vak.h"
 #include "vrt.h"
 
-int getentropy(void *ptr, size_t size)
+/* ESP does not have this function, so make it a wrapper around a
+ * similar ESP function */
+int getentropy(void *buffer, size_t length)
 {
-    memset(ptr, 0x42, size);
+    esp_fill_random(buffer, length);
     return 0;
 }
 
@@ -77,14 +79,20 @@ static const uint64_t QUERY_TIMEOUT_USECS = 1000000;
 int vak_query_server(struct vak_server *server,
                      overlap_value_t *lo, overlap_value_t *hi)
 {
-    static uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
+    /* Note that the default stack on ESP32 is too small for these
+     * buffers to be allocated on the stack, so they are static.  It
+     * would probably be better to allocate them using malloc/free. */
+
     static uint8_t query_buf[VRT_QUERY_PACKET_LEN] = {0};
-    uint32_t query_buf_len;
-    WiFiUDP udp;
-    uint64_t st, rt;
+    static uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
     static uint8_t nonce[VRT_NONCE_SIZE];
+
+    uint32_t query_buf_len;
+    uint64_t st, rt;
     uint64_t out_midpoint;
     uint32_t out_radii;
+
+    WiFiUDP udp;
 
     /* Create a random nonce.  This should be as good randomness as
      * possible, preferably cryptographically secure randomness. */
@@ -170,17 +178,17 @@ static const char * networkPswd = password;
 static boolean connected = false;
 
 static void connectToWiFi(const char *ssid, const char *pwd){
-  Serial.println("Connecting to WiFi network: " + String(ssid));
+    Serial.println("Connecting to WiFi network: " + String(ssid));
 
-  // delete old config
-  WiFi.disconnect(true);
-  //register event handler
-  WiFi.onEvent(WiFiEvent);
+    // delete old config
+    WiFi.disconnect(true);
+    //register event handler
+    WiFi.onEvent(WiFiEvent);
 
-  //Initiate connection
-  WiFi.begin(ssid, pwd);
+    //Initiate connection
+    WiFi.begin(ssid, pwd);
 
-  Serial.println("Waiting for WIFI connection...");
+    Serial.println("Waiting for WIFI connection...");
 }
 
 //wifi event handler
@@ -209,6 +217,16 @@ void setup(){
 
     //Connect to the WiFi network
     connectToWiFi(networkName, networkPswd);
+
+    unsigned seed;
+
+    /* Seed the random function with some randomness.  This is used to
+     * randomize the list of vak_servers. */
+    if (getentropy(&seed, sizeof(seed)) < 0) {
+        fprintf(stderr, "getentropy(%u) failed: %s\n", (unsigned)sizeof(seed), strerror(errno));
+        return 0;
+    }
+    srandom(seed);
 }
 
 void loop() {

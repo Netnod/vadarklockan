@@ -54,17 +54,19 @@ static const uint64_t QUERY_TIMEOUT_USECS = 1000000;
 
 int vak_query_server(struct vak_server *server, overlap_value_t *lo, overlap_value_t *hi)
 {
-    static uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
     static uint8_t query_buf[VRT_QUERY_PACKET_LEN] = {0};
+    static uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
+    static uint8_t nonce[VRT_NONCE_SIZE];
+
     uint32_t query_buf_len;
+    uint64_t st, rt;
+    uint64_t out_midpoint;
+    uint32_t out_radii;
+
+    struct hostent *he;
     struct sockaddr_in servaddr;
     struct sockaddr_in respaddr;
     int sockfd;
-    uint64_t st, rt;
-    struct hostent *he;
-    static uint8_t nonce[VRT_NONCE_SIZE];
-    uint64_t out_midpoint;
-    uint32_t out_radii;
 
     /* Create a random nonce.  This should be as good randomness as
      * possible, preferably cryptographically secure randomness. */
@@ -200,7 +202,16 @@ int vak_query_server(struct vak_server *server, overlap_value_t *lo, overlap_val
 }
 
 int main(int argc, char *argv[]) {
+    unsigned seed;
     overlap_value_t lo, hi;
+
+    /* Seed the random function with some randomness.  This is used to
+     * randomize the list of vak_servers. */
+    if (getentropy(&seed, sizeof(seed)) < 0) {
+        fprintf(stderr, "getentropy(%u) failed: %s\n", (unsigned)sizeof(seed), strerror(errno));
+        return 0;
+    }
+    srandom(seed);
 
     // TODO add command line argument "-q" to only query
     // TODO add command line argument "-v" for verbose

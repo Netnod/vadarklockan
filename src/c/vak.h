@@ -24,6 +24,10 @@ struct vak_server {
     uint8_t public_key[32];
 };
 
+struct vak_server **vak_get_servers(void);
+struct vak_server **vak_get_randomized_servers(void);
+void vak_del_servers(struct vak_server **servers);
+
 int vak_main(overlap_value_t *plo, overlap_value_t *phi);
 
 /* Query a roughtime server to find out how to adjust our local clock
