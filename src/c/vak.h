@@ -9,6 +9,11 @@
 extern "C" {
 #endif
 
+typedef uint64_t vak_time_t;
+
+struct vak_impl;
+struct vak_udp;
+
 /** Structure describing a roughtime server */
 struct vak_server {
     /** Hostname or IP address */
@@ -23,6 +28,15 @@ struct vak_server {
     /** Server's ed2551 public key */
     uint8_t public_key[32];
 };
+
+vak_time_t vak_get_time(void);
+
+void vak_impl_del(struct vak_impl *impl);
+
+struct vak_udp *vak_udp_new(void);
+int vak_udp_send(struct vak_udp *udp, const char *host, unsigned port, const void *buffer, unsigned length);
+int vak_udp_recv(struct vak_udp *udp, const void *buffer, unsigned length);
+void vak_udp_del(struct vak_udp *udp);
 
 struct vak_server **vak_get_servers(void);
 struct vak_server **vak_get_randomized_servers(void);
