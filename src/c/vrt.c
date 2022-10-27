@@ -102,40 +102,38 @@ static void vrt_query_finish(struct vrt_builder *builder)
 }
 
 
-vrt_ret_t vrt_make_query(uint8_t *nonce, uint32_t nonce_len,
-                         uint8_t *out_query, uint32_t *out_query_len,
-                         unsigned variant)
+int vrt_make_query(uint8_t *buffer, unsigned buffer_size,
+                   uint8_t *nonce, unsigned nonce_len,
+                   unsigned variant)
 {
     struct vrt_builder builder;
 
-    memset(out_query, 0, *out_query_len);
+    memset(buffer, 0, buffer_size);
 
     if (variant >= 5) {
         uint32_t ver = vrt_host_to_le32(0x08000003);
-        if (*out_query_len < VRT_QUERY_PACKET_LEN)
-            return VRT_ERROR_WRONG_SIZE;
-        builder.max_size = 12 + VRT_QUERY_PACKET_LEN;
-        vrt_query_init(&builder, out_query, 3, variant);
+        if (buffer_size < VRT_QUERY_PACKET_LEN)
+            return -1;
+        builder.max_size = VRT_QUERY_PACKET_LEN;
+        vrt_query_init(&builder, buffer, 3, variant);
         vrt_query_add_tag(&builder, VRT_TAG_VER, &ver, sizeof(ver));
         if (nonce_len < 32)
-            return VRT_ERROR_WRONG_SIZE;
+            return -1;
         vrt_query_add_tag(&builder, VRT_TAG_NONC, nonce, 32);
         vrt_query_add_tag(&builder, VRT_TAG_PAD, NULL, 0);
-        *out_query_len = VRT_QUERY_PACKET_LEN;
     } else {
-        if (*out_query_len < VRT_QUERY_LEN)
-            return VRT_ERROR_WRONG_SIZE;
+        if (buffer_size < VRT_QUERY_LEN)
+            return -1;
         builder.max_size = VRT_QUERY_LEN;
-        vrt_query_init(&builder, out_query, 2, variant);
+        vrt_query_init(&builder, buffer, 2, variant);
         if (nonce_len < 64)
-            return VRT_ERROR_WRONG_SIZE;
+            return -1;
         vrt_query_add_tag(&builder, VRT_TAG_NONC, nonce, 64);
         vrt_query_add_tag(&builder, VRT_TAG_PAD, NULL, 0);
-        *out_query_len = VRT_QUERY_LEN;
     }
     vrt_query_finish(&builder);
 
-    return VRT_SUCCESS;
+    return builder.max_size;
 }
 
 #define CHECK(x)                                                        \
@@ -256,7 +254,7 @@ static vrt_ret_t vrt_get_tag(vrt_blob_t *out, vrt_blob_t *in,
 }
 
 static vrt_ret_t vrt_verify_dele(vrt_blob_t *cert_sig, vrt_blob_t *cert_dele,
-                                 uint8_t *root_public_key, unsigned variant) {
+                                 const uint8_t *root_public_key, unsigned variant) {
     /* OLD_CONTEXT_CERT_SIZE is larger han CONTEXT_CERT_SIZE */
     uint8_t msg[CERT_SIG_SIZE + CERT_DELE_SIZE + OLD_CONTEXT_CERT_SIZE] = {0};
     size_t msg_size = 0;
@@ -406,8 +404,10 @@ static vrt_ret_t vrt_verify_bounds(vrt_blob_t *srep, vrt_blob_t *dele,
 }
 
 vrt_ret_t vrt_parse_response(uint8_t *nonce_sent, uint32_t nonce_len,
-                             uint32_t *reply, uint32_t reply_len, uint8_t *pk,
-                             uint64_t *out_midpoint, uint32_t *out_radii, unsigned variant) {
+                             uint32_t *reply, uint32_t reply_len,
+                             const uint8_t *pk,
+                             uint64_t *out_midpoint, uint32_t *out_radii,
+                             unsigned variant) {
     vrt_blob_t parent;
     vrt_blob_t cert = {0};
     vrt_blob_t cert_sig = {0};

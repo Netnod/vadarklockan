@@ -110,8 +110,9 @@ static const char CONTEXT_RESP[] = "RoughTime v1 response signature\x00";
  *
  * Variant 7 or later: Currently NOT supported by this implementation.
  */
-vrt_ret_t vrt_make_query(uint8_t *nonce, uint32_t nonce_len, uint8_t *out_query,
-                         uint32_t *out_query_len, unsigned variant);
+int vrt_make_query(uint8_t *buffer, unsigned buffer_size,
+                   uint8_t *nonce, unsigned nonce_len,
+                   unsigned variant);
 
 /** Parse a roughtime query response
  *
@@ -125,7 +126,7 @@ vrt_ret_t vrt_make_query(uint8_t *nonce, uint32_t nonce_len, uint8_t *out_query,
  * \param variant protocol variant (i.e. the roughtime draft number)
  */
 vrt_ret_t vrt_parse_response(uint8_t *nonce_sent, uint32_t nonce_len,
-                             uint32_t *reply, uint32_t reply_len, uint8_t *pk,
+                             uint32_t *reply, uint32_t reply_len, const uint8_t *pk,
                              uint64_t *out_midpoint, uint32_t *out_radii, unsigned variant);
 
 #ifdef __cplusplus
