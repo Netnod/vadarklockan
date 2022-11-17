@@ -7,11 +7,17 @@
 #include "vrt.h"
 #include "login.h"
 
+#include <time.h>
 #include <unistd.h>
+
+#include <SPI.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <SPI.h>
-#include <time.h>
+
+// Graphics and font library for ST7735 driver chip
+#include <TFT_eSPI.h>
+
+static TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
 
 /* ESP does not have this function.  It's present in the include files
  * but there's no implementation.  Make it a wrapper around a similar
@@ -37,89 +43,41 @@ static void print_time(vak_time_t vt)
     ss = tm->tm_sec;
 
     printf("%02u:%02u:%02u.%06u\n", hh, mm, ss, frac);
+
+    char shh[3], smm[3], sss[3];
+    snprintf(shh, sizeof(shh), "%02u", hh);
+    snprintf(smm, sizeof(shh), "%02u", mm);
+    snprintf(sss, sizeof(shh), "%02u", ss);
+
+    const uint16_t color1 = 0xfbe0;     // orange
+    const uint16_t color2 = 0x39c4;     // gray
+    const unsigned font = 7;            // LCD-like font
+
+    // flash colon
+    uint16_t colon_color = color1;
+    if (ss & 1)
+        colon_color = color2;
+
+    byte xpos = 7;
+    byte ypos = 3;
+
+    tft.setTextColor(color1, TFT_BLACK);
+    xpos += tft.drawString(shh, xpos, ypos, font);
+
+    tft.setTextColor(colon_color, TFT_BLACK);
+    xpos += tft.drawChar(':', xpos, ypos, font);
+
+    tft.setTextColor(color1, TFT_BLACK);
+    xpos += tft.drawString(smm, xpos, ypos, font);
+
+    tft.setTextColor(colon_color, TFT_BLACK);
+    xpos += tft.drawChar(':', xpos, ypos, font);
+
+    tft.setTextColor(color1, TFT_BLACK);
+    xpos += tft.drawString(sss, xpos, ypos, font);
+
+    tft.drawString("UTC", 170, 60, 4);
 }
-
-#if 0
-/* How long to wait for a successful response to a roughtime query */
-static const uint64_t QUERY_TIMEOUT_USECS = 1000000;
-
-int vak_query_server(struct vak_server *server,
-                     overlap_value_t *lo, overlap_value_t *hi)
-{
-    /* Note that the default stack on ESP32 is too small for these
-     * buffers to be allocated on the stack, so they are static.  It
-     * would probably be better to allocate them using malloc/free. */
-
-    static uint8_t query_buf[VRT_QUERY_PACKET_LEN] = {0};
-    static uint32_t recv_buffer[VRT_QUERY_PACKET_LEN / 4] = {0};
-    static uint8_t nonce[VRT_NONCE_SIZE];
-
-    uint32_t query_buf_len;
-    uint64_t st, rt;
-    uint64_t out_midpoint;
-    uint32_t out_radii;
-
-    WiFiUDP udp;
-
-    /* Create an UDP socket */
-    udp.begin(WiFi.localIP(), server->port);
-    udp.beginPacket(server->host, server->port);
-
-    /* Get the wall time just before the request was sent out. */
-    st = get_time();
-
-    udp.write(query_buf, query_buf_len);
-    udp.endPacket();
-
-    /* Keep waiting until we get a valid response or we time out */
-    while (1) {
-        int r = udp.parsePacket();
-
-        /* Get the time as soon after the packet was received. */
-        rt = get_time();
-
-        if (r) {
-            unsigned n = udp.read((char*)recv_buffer, sizeof(recv_buffer));
-
-            /* TODO We might want to verify that servaddr and respaddr
-             * match before parsing the response.  This way we could
-             * discard faked packets without having to verify the
-             * signature.  */
-
-            /* Verify the response, check the signature and that it
-             * matches the nonce we put in the query. */
-            if (vrt_parse_response(nonce, 64, recv_buffer,
-                                   n,
-                                   server->public_key, &out_midpoint,
-                                   &out_radii, server->variant) != VRT_SUCCESS) {
-                fprintf(stderr, "vrt_parse_response failed\n");
-                continue;
-            }
-
-            /* Break out of the loop. */
-            break;
-        }
-
-        if (rt - st > QUERY_TIMEOUT_USECS) {
-            printf("timeout\n");
-            return 0;
-        }
-    }
-
-    /* Translate roughtime response to lo..hi adjustment range.  */
-    uint64_t local_time = (st + rt) / 2;
-    double adjustment = ((double)out_midpoint - (double)local_time)/1000000;
-    double rtt = (double)(rt - st) / 1000000;
-    double uncertainty = (double)out_radii / 1000000 + rtt / 2;
-
-    *lo = adjustment - uncertainty;
-    *hi = adjustment + uncertainty;
-
-    printf("adj %.6f .. %.6f\n", *lo, *hi);
-
-    return 1;
-}
-#endif
 
 // WiFi network name and password:
 static const char *networkName = WIFI_USERNAME;
@@ -167,14 +125,17 @@ static enum {
     VAK_RUNNING,
     VAK_DONE,
 } vak_state = VAK_NEW;
-
-struct vak_server const **vak_servers;
-struct vak_udp *vak_udp;
-struct vak_impl *vak_impl;
+static struct vak_server const **vak_servers;
+static struct vak_udp *vak_udp;
+static struct vak_impl *vak_impl;
 
 void setup(){
     // Initilize hardware serial:
     Serial.begin(115200);
+
+    tft.init();
+    tft.setRotation(1);
+    tft.fillScreen(TFT_BLACK);
 
     //Connect to the WiFi network
     connectToWiFi(networkName, networkPswd);
@@ -195,6 +156,16 @@ void setup(){
 
 void loop() {
     static uint64_t last_seconds = 0;
+
+    vak_time_t vt = vak_get_time();
+    uint64_t seconds = vt / 1000000;
+    if (last_seconds != seconds) {
+        print_time(vt);
+        last_seconds = seconds;
+
+        if (!connected)
+            printf("waiting for WiFi...\n");
+    }
 
     if (vak_state == VAK_RUNNING) {
         if (connected) {
@@ -220,15 +191,5 @@ void loop() {
                 vak_servers_del(vak_servers);
             }
         }
-    }
-
-    vak_time_t vt = vak_get_time();
-    uint64_t seconds = vt / 1000000;
-    if (last_seconds != seconds) {
-        print_time(vt);
-        last_seconds = seconds;
-
-        if (!connected)
-            printf("waiting for WiFi...\n");
     }
 }

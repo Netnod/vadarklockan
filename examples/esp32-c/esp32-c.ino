@@ -7,11 +7,12 @@
 #include "vrt.h"
 #include "login.h"
 
+#include <time.h>
 #include <unistd.h>
+
+#include <SPI.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <SPI.h>
-#include <time.h>
 
 /* ESP does not have this function.  It's present in the include files
  * but there's no implementation.  Make it a wrapper around a similar
@@ -167,10 +168,9 @@ static enum {
     VAK_RUNNING,
     VAK_DONE,
 } vak_state = VAK_NEW;
-
-struct vak_server const **vak_servers;
-struct vak_udp *vak_udp;
-struct vak_impl *vak_impl;
+static struct vak_server const **vak_servers;
+static struct vak_udp *vak_udp;
+static struct vak_impl *vak_impl;
 
 void setup(){
     // Initilize hardware serial:
@@ -196,6 +196,16 @@ void setup(){
 void loop() {
     static uint64_t last_seconds = 0;
 
+    vak_time_t vt = vak_get_time();
+    uint64_t seconds = vt / 1000000;
+    if (last_seconds != seconds) {
+        print_time(vt);
+        last_seconds = seconds;
+
+        if (!connected)
+            printf("waiting for WiFi...\n");
+    }
+
     if (vak_state == VAK_RUNNING) {
         if (connected) {
             overlap_value_t lo, hi;
@@ -220,15 +230,5 @@ void loop() {
                 vak_servers_del(vak_servers);
             }
         }
-    }
-
-    vak_time_t vt = vak_get_time();
-    uint64_t seconds = vt / 1000000;
-    if (last_seconds != seconds) {
-        print_time(vt);
-        last_seconds = seconds;
-
-        if (!connected)
-            printf("waiting for WiFi...\n");
     }
 }
