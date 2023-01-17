@@ -23,15 +23,14 @@ time we mean both time of day and date.  Without correct time there
 are many several security-critical protocols that either completely
 stop working or that lose much of their security.
 
-* DNSSEC, which is needed to look up names on the internet, will not
-  work at all if the clock in a client is off by more than five
-  minutes.  It's possible to fall back to plain DNS without security,
-  but that opens up the client to man in the middle attacks: someone
-  who can monitor and affect the communication between client and
-  server can force DNS to give wrong answers for domain name name
-  lookups.  You might think that you are talking to "example.com",
-  while you're actually talking to someone completely different who is
-  impersonating that server.
+* DNSSEC, which is needed to look up names on the internet, needs
+  correct time to validate signed DNS records.  It is possible to fall
+  back to plain DNS without security, but that opens up the client to
+  man in the middle attacks: someone who can monitor and affect the
+  communication between client and server can force DNS to give wrong
+  answers for domain name name lookups.  You might think that you are
+  talking to "example.com", while you're actually talking to someone
+  completely different who is impersonating that server.
 
 * TLS (formerly known as SSL) needs correct time to verify the
   validity of the certificates used.  TLS is the base for many other
