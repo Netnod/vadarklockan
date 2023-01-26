@@ -19,6 +19,13 @@
 
 static TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
 
+// WiFi network name and password:
+static const char *networkName = WIFI_USERNAME;
+static const char *networkPswd = WIFI_PASSWORD;
+
+//Are we currently connected?
+static boolean connected = false;
+
 /* ESP does not have this function.  It's present in the include files
  * but there's no implementation.  Make it a wrapper around a similar
  * ESP function */
@@ -31,60 +38,63 @@ int getentropy(void *buffer, size_t length)
 static void print_time(vak_time_t vt)
 {
     struct tm *tm;
-    unsigned hh, mm, ss;
 
     time_t t = vt / 1000000;
     unsigned frac = vt % 1000000;
 
     tm = gmtime(&t);
 
-    hh = tm->tm_hour;
-    mm = tm->tm_min;
-    ss = tm->tm_sec;
+    printf("%04u-%02u-%02u %02u:%02u:%02u.%06u\n",
+           tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday,
+           tm->tm_hour, tm->tm_min, tm->tm_sec, frac);
 
-    printf("%02u:%02u:%02u.%06u\n", hh, mm, ss, frac);
-
-    char shh[3], smm[3], sss[3];
-    snprintf(shh, sizeof(shh), "%02u", hh);
-    snprintf(smm, sizeof(shh), "%02u", mm);
-    snprintf(sss, sizeof(shh), "%02u", ss);
+    char sdate[11], shh[3], smm[3], sss[3];
+    snprintf(sdate, sizeof(sdate), "%04u-%02u-%02u",
+             tm->tm_year + 1900, tm->tm_mon + 1, tm->tm_mday);
+    snprintf(shh, sizeof(shh), "%02u", tm->tm_hour);
+    snprintf(smm, sizeof(smm), "%02u", tm->tm_min);
+    snprintf(sss, sizeof(sss), "%02u", tm->tm_sec);
 
     const uint16_t color1 = 0xfbe0;     // orange
     const uint16_t color2 = 0x39c4;     // gray
-    const unsigned font = 7;            // LCD-like font
+    const unsigned time_font = 7;            // LCD-like font
 
     // flash colon
     uint16_t colon_color = color1;
-    if (ss & 1)
+    if (tm->tm_sec & 1)
         colon_color = color2;
 
     byte xpos = 7;
-    byte ypos = 3;
+    byte ypos = 20;
 
     tft.setTextColor(color1, TFT_BLACK);
-    xpos += tft.drawString(shh, xpos, ypos, font);
+    xpos += tft.drawString(shh, xpos, ypos, time_font);
 
     tft.setTextColor(colon_color, TFT_BLACK);
-    xpos += tft.drawChar(':', xpos, ypos, font);
+    xpos += tft.drawChar(':', xpos, ypos, time_font);
 
     tft.setTextColor(color1, TFT_BLACK);
-    xpos += tft.drawString(smm, xpos, ypos, font);
+    xpos += tft.drawString(smm, xpos, ypos, time_font);
 
     tft.setTextColor(colon_color, TFT_BLACK);
-    xpos += tft.drawChar(':', xpos, ypos, font);
+    xpos += tft.drawChar(':', xpos, ypos, time_font);
 
     tft.setTextColor(color1, TFT_BLACK);
-    xpos += tft.drawString(sss, xpos, ypos, font);
+    xpos += tft.drawString(sss, xpos, ypos, time_font);
 
-    tft.drawString("UTC", 170, 60, 4);
+    ypos += 60;
+
+    tft.setTextColor(color1, TFT_BLACK);
+    tft.drawString(sdate, 7, ypos, 4);
+    tft.drawString("UTC", 170, ypos, 4);
+
+    ypos += 30;
+    xpos = 60;
+    if (!connected)
+        tft.drawString("   No WiFi             ", xpos, ypos, 4);
+    else
+        tft.drawString("Connected", xpos, ypos, 4);
 }
-
-// WiFi network name and password:
-static const char *networkName = WIFI_USERNAME;
-static const char *networkPswd = WIFI_PASSWORD;
-
-//Are we currently connected?
-static boolean connected = false;
 
 static void connectToWiFi(const char *ssid, const char *pwd){
     Serial.println("Connecting to WiFi network: " + String(ssid));

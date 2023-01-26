@@ -26,18 +26,15 @@ int getentropy(void *buffer, size_t length)
 static void print_time(vak_time_t vt)
 {
     struct tm *tm;
-    unsigned hh, mm, ss;
 
     time_t t = vt / 1000000;
     unsigned frac = vt % 1000000;
 
     tm = gmtime(&t);
 
-    hh = tm->tm_hour;
-    mm = tm->tm_min;
-    ss = tm->tm_sec;
-
-    printf("%02u:%02u:%02u.%06u\n", hh, mm, ss, frac);
+    printf("%04u-%02u-%02u %02u:%02u:%02u.%06u\n",
+           tm->tm_year, tm->tm_mon, tm->tm_mday,
+           tm->tm_hour, tm->tm_min, tm->tm_sec, frac);
 }
 
 #if 0
