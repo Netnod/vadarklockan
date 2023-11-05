@@ -52,7 +52,67 @@ The C implementation for the ESP32 can be found in examples/esp32.
 Some glue code needed to be written to use WiFi and UDP on the ESP32.
 The code so far only supports IPv4.
 
-.. todo:: Add instructions on how to compile and run the C code on ESP32
+Using the esp32-c example
+
+Install the Arduino development environment.  It is availabe on a
+modern Debian distribution:
+
+::
+    sudo apt-get -y install arduino git
+
+Start the Arduino environment, either by finding "Development" /
+"Arduino IDE" in the start menus or by running the following from a
+command line:
+
+::
+    arduino
+
+Select "File" / "Preferences" and the following URL to "Additional
+Boards Manager URLs":
+
+https://dl.espressif.com/dl/package_esp32_index.json
+
+Select "Tools" / "Board" / "Board Manager".  Search for "esp32" and
+press "Install" on the one which says "by Expressif Systems".  Wait
+for the download to finish.
+
+Select "Tools" / "Board" / "ESP32 Arduino" / "ESP32 Dev Module".
+
+Configure the correct serial port for your ESP32 device (usally
+/dev/ttyACM0) using "Tools" / "Port".
+
+Select "File" / "Open" and open "examples/esp32-c/esp32-c.ino".
+
+Modify "login.h" with the name and password for your WiFi network.
+
+Select "Sketch" / "Upload" to upload the sketch.
+
+Connect to the serial port using terminal program to see the output
+from the application running in the ESP32.
+
+Using the ttgo-esp32-c example
+
+Follow the instructions for the esp32-c example above on how to
+install and configure the Arduino environment.
+
+You will also have to add the TTGO display driver driver to your
+Arduino environment.  First find your Arduino directory; on Linux it's
+usually the "Arduino" directory in your home directory.  Check out a
+git repository with the display driver and create a link to it.
+
+::
+    cd ~/Arduino
+    git clone https://github.com/Xinyuan-LilyGO/TTGO-T-Display.git
+
+    cd libraries
+    ln -s ../TTGO-T-Display/TFT_eSPI .
+
+Select "File" / "Open" and open
+"examples/ttgo-esp32-c/ttgo-esp32-c.ino".
+
+Modify "login.h" with the name and password for your WiFi network.
+
+Select "Sketch" / "Upload" to upload the sketch.
 
 Unit testing
 ------------
@@ -75,11 +135,10 @@ Ubuntu system:
 
 ::
 
-    apt-get install -y build-essential python3-cffi valgrind
+    sudo apt-get install -y build-essential python3-cffi valgrind
 
 Then run the test cases with:
 
 ::
-
     cd src/c
     python3 test_overlap_c.py
